@@ -101,7 +101,7 @@ function finish() {
   if(!run)return;
   const saved={...run,elapsed:elapsed(),active:false,since:null,finishedAt:Date.now()};latestFinished=saved;history.unshift(saved);history=history.slice(0,100);stopGPS();run=null;gps=null;releaseWake();
   $('copyStatus').textContent='';$('reportText').hidden=true;
-  $('finishDialog').close();say('Run saved. Nice work showing up.');persist();render();
+  $('finishDialog').close();say('Run saved. Nice work showing up.');persist();render();notifyCloud();
   $('summary').hidden=false;$('summaryText').textContent=`${formatTime(saved.elapsed)} on your feet · ${saved.plan.gps?((saved.meters||0)/RunGPSKit.MILE).toFixed(2)+' GPS miles':saved.splits.length+' full miles marked'}${saved.splits.length ? ` · ${formatTime(saved.splits.reduce((a,b)=>a+b,0)/saved.splits.length)} average completed-mile pace` : ''}. ${saved.plan.gps?(saved.gpsGaps?'GPS gaps left some distance unmeasured.':'GPS distance is an estimate.'):'Partial miles aren’t measured.'}`;
 }
 function showHistory(show) {
@@ -128,7 +128,7 @@ $('importButton').onclick=async ()=>{
     if(imported.some(r=>r.name===record.name&&r.date===record.date&&Math.abs(r.meters-record.meters)<1&&Math.abs(r.seconds-record.seconds)<1)){messages.push(`${file.name}: already imported.`);continue;}
     imported.unshift(record);imported=imported.slice(0,100);added++;
   }catch(error){messages.push(`${file.name}: ${error.message}`);}}
-  persist();renderImported();$('importStatus').textContent=`${added} activities imported. ${messages.join(' ')}`;$('importFiles').value='';$('importButton').disabled=false;
+  persist();renderImported();notifyCloud();$('importStatus').textContent=`${added} activities imported. ${messages.join(' ')}`;$('importFiles').value='';$('importButton').disabled=false;
 };
 $('importFiles').addEventListener('change',()=>{const n=$('importFiles').files?.length||0;$('importStatus').textContent=n?`${n} files selected. Tap Import selected files.`:'No file selected.';});
 function stopGPS(){gpsGeneration++;if(gpsWatch!==null&&navigator.geolocation)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;paceDeviation=null;}
@@ -205,3 +205,21 @@ if(document.modelContext?.registerTool){
   tools.forEach(tool=>{try{Promise.resolve(document.modelContext.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch{}});
   window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});
 }
+
+function notifyCloud(){if(typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('run-journal-changed'));}
+window.RunJournalCloud = {
+  exportRecords(){return [
+    ...history.map(r=>({record_id:'run:'+r.id,kind:'run',payload:r})),
+    ...imported.map(r=>({record_id:'import:'+r.id,kind:'import',payload:r}))
+  ];},
+  mergeRecords(rows){
+    for(const row of rows){
+      const r=row.payload;
+      if(row.kind==='run'&&validRun(r)&&Number.isFinite(r.finishedAt)&&!history.some(h=>h.id===r.id))history.push({...r,active:false,since:null});
+      if(row.kind==='import'&&r&&typeof r.id==='string'&&typeof r.name==='string'&&Number.isFinite(r.meters)&&r.meters>0&&Number.isFinite(r.seconds)&&r.seconds>0&&!imported.some(h=>h.id===r.id||(h.name===r.name&&h.date===r.date&&Math.abs(h.meters-r.meters)<1&&Math.abs(h.seconds-r.seconds)<1)))imported.push(r);
+    }
+    history.sort((a,b)=>b.finishedAt-a.finishedAt);history=history.slice(0,100);
+    imported.sort((a,b)=>(Date.parse(b.date)||0)-(Date.parse(a.date)||0));imported=imported.slice(0,100);
+    persist();render();if(!$('historyView').hidden)showHistory(true);
+  }
+};

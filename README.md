@@ -31,3 +31,7 @@ History accepts up to ten GPX or TCX files per batch, maximum 50 MB each, and re
 Files are parsed locally; only name, source format, date, distance, duration and available heart-rate summary are saved. Coordinates, routes and raw files are discarded. FIT files and automatic Strava login are not implemented. Browser parser checks passed for TCX distance/time/HR, GPX distance/time, malformed XML rejection and rejection of untimed routes.
 
 Enable Pages in repository Settings > Pages with source GitHub Actions. The Publish browser app workflow publishes `dist` on main-branch pushes and can be started manually. No Apple developer membership or signing keys are needed. Open the resulting URL in Safari on the iPhone, then use Share > Add to Home Screen if desired. No service worker is installed; this version requires connectivity when opening the page.
+
+## Private cloud journal (v0.5.0)
+Optional Supabase sign-in syncs completed runs and imported summaries between devices. Cloud setup and per-user SQL rules are in cloud/README.md and cloud/setup.sql. Connection values are empty until a project is configured. The local coach remains available offline. Plans and live sessions stay on each device.
+

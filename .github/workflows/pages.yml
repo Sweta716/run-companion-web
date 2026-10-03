@@ -24,6 +24,8 @@ jobs:
           node --check dist/app.js
           node --check dist/gps.js
           node --check dist/import.js
+          node --check dist/cloud.js
+          node --check dist/cloud-config.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
