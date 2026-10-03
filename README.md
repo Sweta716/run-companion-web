@@ -10,6 +10,12 @@ Source: `dist/index.html`, `dist/style.css`, `dist/app.js`, `dist/gps.js`. Stati
 
 ## GPS v0.2
 
+## Walking test v0.3
+
+Choose Walk or Run before starting. Selecting Walk offers an editable 20:00/mile planning pace and disables all faster/slower pace corrections; timer, distance, mile cues and comfortable-effort check-ins remain active. How am I doing? reads elapsed time, measured/marked distance, and recent GPS pace when available. Voice respects the coach voice toggle.
+
+Finish a session and choose Copy test summary, or copy a saved session from History. Reports include activity, elapsed time, distance, splits, GPS-gap flag and up to 150 displayed coaching cues with timestamps. Voice-requested flags do not assert that audio played. Copy failure shows selectable text. No GPS coordinates or routes are stored or exported. Add Garmin distance and listening feedback manually after testing.
+
 Enable Use phone GPS before starting, permit location, and wait outdoors for accuracy within 25 meters. The timer starts after the initial acceptable fix. Latitude/longitude are held only in memory; saved records contain total meters, mile splits, and a gap flag, never a route or coordinates. Location is not transmitted to a server.
 
 Distance uses Haversine segments with a small movement noise floor. Readings older than 8 seconds, accuracy worse than 25 meters, and jumps above 8 m/s are excluded. Gaps longer than 15 seconds reset the position anchor rather than invent distance. Stopping, hiding the page, pausing, and resuming reset pace smoothing. Hidden-page movement is not counted; the saved gap flag makes this visible. GPS can undercount distance around curves or through rejected fixes.

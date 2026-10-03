@@ -6,6 +6,8 @@ const paceText = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 let prefs = { distance: 3, minutes: 11, seconds: 0, voice: true }, history = [], run = null, wake = null;
 let cue = 'Start comfortable. There’s no need to win the first mile.';
 let gps = null, gpsWatch = null, paceDeviation = null, lastPaceCue = 0, gpsGeneration = 0;
+let latestFinished = history[0] || null;
+function walking(){return (run?.plan||prefs).mode==='walk';}
 function validPlan(p) { return p && Number.isFinite(p.distance) && p.distance >= .5 && p.distance <= 30 && Number.isInteger(p.minutes) && p.minutes >= 4 && p.minutes <= 25 && Number.isInteger(p.seconds) && p.seconds >= 0 && p.seconds <= 59 && typeof p.voice === 'boolean'; }
 function validRun(r) { return r && typeof r.id === 'string' && validPlan(r.plan) && Number.isFinite(r.elapsed) && r.elapsed >= 0 && Array.isArray(r.splits) && r.splits.every(s=>Number.isFinite(s)&&s>=60000) && Number.isFinite(r.lastCheck); }
 try {
@@ -23,6 +25,7 @@ function persist() {
 }
 function say(text, speak = true) {
   cue = text; $('cue').textContent = `“${text}”`;
+  if(run){if(!Array.isArray(run.cues))run.cues=[];run.cues.push({seconds:Math.floor(elapsed()/1000),text,voiceRequested:speak&&run.plan.voice});run.cues=run.cues.slice(-150);}
   if(!speak || !(run ? run.plan.voice : prefs.voice)) return;
   if(!('speechSynthesis' in window)) { $('storageWarning').textContent = 'Voice is unavailable in this browser. Coaching cues will appear on screen.'; return; }
   window.speechSynthesis.cancel();
@@ -30,12 +33,13 @@ function say(text, speak = true) {
   utterance.onerror = e => { if(!['canceled','interrupted'].includes(e.error)) $('storageWarning').textContent = 'Voice did not play. Check your volume and tap Hear this cue to try again.'; };
   window.speechSynthesis.speak(utterance);
 }
-function readPlan() { return {distance:Number($('distance').value),minutes:Number($('minutes').value),seconds:Number($('seconds').value),voice:$('voice').checked,gps:$('gpsMode').checked}; }
+function readPlan() { return {distance:Number($('distance').value),minutes:Number($('minutes').value),seconds:Number($('seconds').value),voice:$('voice').checked,gps:$('gpsMode').checked,mode:$('activityMode').value}; }
 function configure(p) {
   if(run) throw new Error('Finish the current run before changing its plan.');
   if(!validPlan(p)) throw new Error('Choose 0.5–30 miles, 4–25 pace minutes, and 0–59 pace seconds.');
   prefs = p; $('distance').value=p.distance; $('minutes').value=p.minutes; $('seconds').value=p.seconds; $('voice').checked=p.voice; $('gpsMode').checked=!!p.gps;
   $('estimate').textContent=formatTime(p.distance*(p.minutes*60+p.seconds)*1000); persist();
+  $('activityMode').value=p.mode==='walk'?'walk':'run';$('modeHint').textContent=p.mode==='walk'?'Walk comfortably. Pace corrections are off; distance and check-ins stay on.':'Pace guidance follows your chosen target.';
 }
 async function requestWake() {
   if(!navigator.wakeLock || document.visibilityState!=='visible' || !run?.active) return;
@@ -73,7 +77,7 @@ async function start() {
   run={id:crypto.randomUUID(),plan:{...p},elapsed:0,since:Date.now(),active:true,splits:[],lastCheck:0,startedAt:Date.now(),meters:0,gpsGaps:false};
   paceDeviation=null;lastPaceCue=0;
   if(p.gps){gps=new RunGPSKit.RunGPS();gps.add(initial,0);startGPS();}
-  $('summary').hidden=true; say(`Let's go. Target pace is ${p.minutes} minutes ${p.seconds} seconds per mile. Start comfortable.`);persist();render();void requestWake();
+  $('summary').hidden=true; say(p.mode==='walk'?'Time for a walk. Keep a comfortable effort. I will check in with time and distance.':`Let's go. Target pace is ${p.minutes} minutes ${p.seconds} seconds per mile. Start comfortable.`);persist();render();void requestWake();
 }
 function pauseResume() {
   if(!run) return;
@@ -86,14 +90,15 @@ function markMile() {
   const split=elapsed()-run.splits.reduce((a,b)=>a+b,0);
   if(split<60000) {say('Too soon for another full mile. Tap only after completing a mile.');return;}
   run.splits.push(split);const delta=split/1000-(run.plan.minutes*60+run.plan.seconds);
-  const advice=delta < -20 ? 'You’re ahead of your chosen pace. Ease back toward your target.' : delta > 20 ? 'You’re behind your chosen pace. Stay comfortable; don’t rush to catch up.' : 'You’re close to your chosen pace. Hold this rhythm.';
+  const advice=walking()?'Keep walking comfortably. There’s no need to chase a pace.':delta < -20 ? 'You’re ahead of your chosen pace. Ease back toward your target.' : delta > 20 ? 'You’re behind your chosen pace. Stay comfortable; don’t rush to catch up.' : 'You’re close to your chosen pace. Hold this rhythm.';
   const s=Math.floor(split/1000);
   say(`Mile ${run.splits.length}. ${Math.floor(s/60)} minutes ${s%60} seconds. ${advice}${run.splits.length>=run.plan.distance?' Planned distance reached. Finish when you’re ready.':''}`);
   persist();render();
 }
 function finish() {
   if(!run)return;
-  const saved={...run,elapsed:elapsed(),active:false,since:null,finishedAt:Date.now()};history.unshift(saved);history=history.slice(0,100);stopGPS();run=null;gps=null;releaseWake();
+  const saved={...run,elapsed:elapsed(),active:false,since:null,finishedAt:Date.now()};latestFinished=saved;history.unshift(saved);history=history.slice(0,100);stopGPS();run=null;gps=null;releaseWake();
+  $('copyStatus').textContent='';$('reportText').hidden=true;
   $('finishDialog').close();say('Run saved. Nice work showing up.');persist();render();
   $('summary').hidden=false;$('summaryText').textContent=`${formatTime(saved.elapsed)} on your feet · ${saved.plan.gps?((saved.meters||0)/RunGPSKit.MILE).toFixed(2)+' GPS miles':saved.splits.length+' full miles marked'}${saved.splits.length ? ` · ${formatTime(saved.splits.reduce((a,b)=>a+b,0)/saved.splits.length)} average completed-mile pace` : ''}. ${saved.plan.gps?(saved.gpsGaps?'GPS gaps left some distance unmeasured.':'GPS distance is an estimate.'):'Partial miles aren’t measured.'}`;
 }
@@ -104,7 +109,7 @@ function showHistory(show) {
   $('historyList').replaceChildren();
   if(!history.length){const empty=document.createElement('div');empty.className='panel empty';const title=document.createElement('h2');title.textContent='Your first run starts here.';const text=document.createElement('p');text.textContent='Finish a run and it will appear in your journal.';empty.append(title,text);$('historyList').append(empty);}
   history.forEach(r=>{const card=document.createElement('article');card.className='panel history-card';const title=document.createElement('h2');title.textContent=new Date(r.finishedAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});card.append(title);const metrics=document.createElement('div');metrics.className='history-metrics';const avg=r.splits.length?formatTime(r.splits.reduce((a,b)=>a+b,0)/r.splits.length):'—';
-    [['Elapsed',formatTime(r.elapsed)],[r.plan.gps?'GPS miles':'Miles marked',r.plan.gps?((r.meters||0)/RunGPSKit.MILE).toFixed(2):String(r.splits.length)],['Split avg / mile',avg]].forEach(([label,value])=>{const item=document.createElement('div'),l=document.createElement('span'),v=document.createElement('strong');l.textContent=label;v.textContent=value;item.append(l,v);metrics.append(item);});card.append(metrics);if(r.gpsGaps){const note=document.createElement('p');note.className='error';note.textContent='GPS gaps: some distance was not measured.';card.append(note);}$('historyList').append(card);});
+    [['Elapsed',formatTime(r.elapsed)],[r.plan.gps?'GPS miles':'Miles marked',r.plan.gps?((r.meters||0)/RunGPSKit.MILE).toFixed(2):String(r.splits.length)],['Split avg / mile',avg]].forEach(([label,value])=>{const item=document.createElement('div'),l=document.createElement('span'),v=document.createElement('strong');l.textContent=label;v.textContent=value;item.append(l,v);metrics.append(item);});card.append(metrics);const copy=document.createElement('button');copy.className='secondary';copy.textContent='Copy test summary';copy.onclick=()=>copyReport(r,card);card.append(copy);if(r.gpsGaps){const note=document.createElement('p');note.className='error';note.textContent='GPS gaps: some distance was not measured.';card.append(note);}$('historyList').append(card);});
 }
 function stopGPS(){gpsGeneration++;if(gpsWatch!==null&&navigator.geolocation)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;paceDeviation=null;}
 function startGPS(){
@@ -119,7 +124,7 @@ function startGPS(){
     let spoke=false;
     result.crossings.forEach(crossing=>{const previous=run.splits.reduce((a,b)=>a+b,0),split=crossing-previous;if(split<60000)return;run.splits.push(split);const seconds=Math.floor(split/1000);say(`Mile ${run.splits.length}. ${Math.floor(seconds/60)} minutes ${seconds%60} seconds. Keep your effort comfortable.`);lastPaceCue=time;spoke=true;});
     if(before/RunGPSKit.MILE<run.plan.distance&&run.meters/RunGPSKit.MILE>=run.plan.distance){say('Your planned distance is reached. Finish when you’re ready.');lastPaceCue=time;spoke=true;}
-    if(!spoke&&gps.pace){
+    if(!walking()&&!spoke&&gps.pace){
       const delta=gps.pace-(run.plan.minutes*60+run.plan.seconds),direction=delta < -25?'fast':delta>25?'slow':null;
       if(!direction)paceDeviation=null;
       else if(paceDeviation?.direction!==direction)paceDeviation={direction,since:time};
@@ -136,6 +141,31 @@ $('planForm').addEventListener('submit',async e=>{e.preventDefault();try{await s
 ['distance','minutes','seconds','voice','gpsMode'].forEach(id=>$(id).addEventListener('change',()=>{const p=readPlan();if(validPlan(p)){configure(p);$('formError').textContent='';}}));
 $('testVoice').onclick=()=>{prefs.voice=$('voice').checked;if(!prefs.voice){$('formError').textContent='Enable spoken coaching to test the voice.';return;}say('Start comfortable. Run your own pace.');};
 $('repeat').onclick=()=>say(cue);$('pause').onclick=pauseResume;$('lap').onclick=markMile;
+$('checkIn').onclick=()=>{
+  if(!run)return;
+  const s=Math.floor(elapsed()/1000),m=run.plan.gps?(run.meters||0)/RunGPSKit.MILE:run.splits.length;
+  let text=`${Math.floor(s/60)} minutes ${s%60} seconds in. ${m.toFixed(2)} ${run.plan.gps?'miles measured':'full miles marked'}.`;
+  if(run.plan.gps&&run.active&&gps?.pace){const p=Math.round(gps.pace);text+=` Recent pace is ${Math.floor(p/60)} minutes ${p%60} seconds per mile.`;}
+  else if(run.plan.gps)text+=' Recent pace is not available yet.';
+  text+=run.active?(walking()?' Keep your walk comfortable.':' Stay comfortable and hold your rhythm.'):' Your session is paused.';
+  say(text);persist();
+};
+function testReport(r){
+  return ['Run Companion v0.3 test summary',new Date(r.finishedAt).toLocaleString(),`Activity: ${r.plan.mode==='walk'?'Walk':'Run'}`,`Tracking: ${r.plan.gps?'Phone GPS':'Manual mile markers'}`,`Elapsed: ${formatTime(r.elapsed)}`,`Distance: ${r.plan.gps?((r.meters||0)/RunGPSKit.MILE).toFixed(2):r.splits.length} miles`,`Target: ${paceText(r.plan.minutes*60+r.plan.seconds)} / mile${r.plan.mode==='walk'?' (pace corrections off)':''}`,`GPS gaps: ${r.gpsGaps?'Yes — distance may be incomplete':'None flagged'}`,`Splits: ${r.splits.length?r.splits.map((s,i)=>`mile ${i+1}: ${formatTime(s)}`).join('; '):'No complete miles'}`,'Coaching cues (voice requested does not confirm playback):',...(r.cues||[]).map(c=>`${formatTime(c.seconds*1000)}: ${c.text}${c.voiceRequested?' [voice requested]':''}`),'Garmin distance: [add after test]','Voice heard / feedback: [add after test]'].join('\n');
+}
+async function copyReport(r,host=null){
+  if(!r)return;
+  const text=testReport(r);
+  const field=host?document.createElement('textarea'):$('reportText'),status=host?document.createElement('p'):$('copyStatus');
+  field.value=text;field.readOnly=true;field.rows=8;field.setAttribute('aria-label','Test summary');field.hidden=false;if(host){host.append(status,field);}
+  try{if(!navigator.clipboard?.writeText)throw new Error('unavailable');await navigator.clipboard.writeText(text);status.textContent='Copied. Paste this into our chat after your walk.';}
+  catch{status.textContent='Select the summary below and copy it manually.';field.focus();field.select();}
+}
+$('copySummary').onclick=()=>copyReport(latestFinished);
+$('activityMode').addEventListener('change',()=>{
+  if($('activityMode').value==='walk'){$('minutes').value=20;$('seconds').value=0;}else{$('minutes').value=11;$('seconds').value=0;}
+  configure(readPlan());
+});
 $('finish').onclick=()=>{$('finishDialog').showModal();};$('cancelFinish').onclick=()=>{$('finishDialog').close();};$('saveFinish').onclick=finish;
 $('newRun').onclick=()=>{$('summary').hidden=true;window.scrollTo({top:0,behavior:'smooth'});};
 $('liveVoice').onchange=()=>{if(run){run.plan.voice=$('liveVoice').checked;if(!run.plan.voice&&window.speechSynthesis)window.speechSynthesis.cancel();persist();}};
@@ -145,7 +175,7 @@ window.addEventListener('pagehide',persist);
 setInterval(()=>{if(!run?.active)return;const now=elapsed();if(run.plan.gps){gps?.stale();if(gps?.gaps)run.gpsGaps=true;if(!gps?.pace)paceDeviation=null;render();}else $('elapsed').textContent=formatTime(now);if(now-run.lastCheck>=300000&&document.visibilityState==='visible'&&now-lastPaceCue>=30000){run.lastCheck=now;say(`${Math.floor(now/60000)} minutes in. Keep your effort comfortable.${run.plan.gps?'':' Mark your next full mile when you reach it.'}`);persist();}},1000);
 setInterval(()=>{if(run)persist();},10000);
 configureInitial();
-function configureInitial(){ $('distance').value=prefs.distance;$('minutes').value=prefs.minutes;$('seconds').value=prefs.seconds;$('voice').checked=prefs.voice;$('gpsMode').checked=!!prefs.gps;$('estimate').textContent=formatTime(prefs.distance*(prefs.minutes*60+prefs.seconds)*1000);render(); }
+function configureInitial(){ $('activityMode').value=prefs.mode==='walk'?'walk':'run';$('modeHint').textContent=prefs.mode==='walk'?'Walk comfortably. Pace corrections are off; distance and check-ins stay on.':'Pace guidance follows your chosen target.'; $('distance').value=prefs.distance;$('minutes').value=prefs.minutes;$('seconds').value=prefs.seconds;$('voice').checked=prefs.voice;$('gpsMode').checked=!!prefs.gps;$('estimate').textContent=formatTime(prefs.distance*(prefs.minutes*60+prefs.seconds)*1000);render(); }
 if(document.modelContext?.registerTool){
   const lifecycle=new AbortController();
   const tools=[
