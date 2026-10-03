@@ -118,8 +118,9 @@ function renderImported(){
   $('importedList').replaceChildren();
   imported.forEach(r=>{const card=document.createElement('article');card.className='history-card';const title=document.createElement('h3');title.textContent=r.name;const stats=document.createElement('p');stats.textContent=`${(r.meters/RunGPSKit.MILE).toFixed(2)} miles · ${formatTime(r.seconds*1000)} elapsed · ${formatTime(r.seconds/r.meters*RunGPSKit.MILE*1000)} / mile${r.averageHeartRate?` · ${r.averageHeartRate} bpm sample average`:''}`;const note=document.createElement('p');note.className='hint';note.textContent=`${r.source} · ${r.date?new Date(r.date).toLocaleDateString():'Date unavailable'} · Elapsed pace can include stops.`;card.append(title,stats,note);$('importedList').append(card);});
 }
-$('importFiles').addEventListener('change',async event=>{
-  const files=Array.from(event.target.files||[]);if(files.length>10){$('importStatus').textContent='Choose up to 10 files at a time.';return;}
+$('importButton').onclick=async ()=>{
+  const files=Array.from($('importFiles').files||[]);if(!files.length){$('importStatus').textContent='Tap Choose Files first and select a GPX or TCX file from Files or iCloud Drive.';return;}if(files.length>10){$('importStatus').textContent='Choose up to 10 files at a time.';return;}
+  $('importButton').disabled=true;$('importStatus').textContent='Reading selected files…';
   let added=0;const messages=[];
   for(const file of files){try{
     if(file.size>5*1024*1024)throw new Error('Maximum file size is 5 MB.');
@@ -127,8 +128,9 @@ $('importFiles').addEventListener('change',async event=>{
     if(imported.some(r=>r.name===record.name&&r.date===record.date&&Math.abs(r.meters-record.meters)<1&&Math.abs(r.seconds-record.seconds)<1)){messages.push(`${file.name}: already imported.`);continue;}
     imported.unshift(record);imported=imported.slice(0,100);added++;
   }catch(error){messages.push(`${file.name}: ${error.message}`);}}
-  persist();renderImported();$('importStatus').textContent=`${added} activities imported. ${messages.join(' ')}`;event.target.value='';
-});
+  persist();renderImported();$('importStatus').textContent=`${added} activities imported. ${messages.join(' ')}`;$('importFiles').value='';$('importButton').disabled=false;
+};
+$('importFiles').addEventListener('change',()=>{const n=$('importFiles').files?.length||0;$('importStatus').textContent=n?`${n} files selected. Tap Import selected files.`:'No file selected.';});
 function stopGPS(){gpsGeneration++;if(gpsWatch!==null&&navigator.geolocation)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;paceDeviation=null;}
 function startGPS(){
   stopGPS();if(!run?.active||!run.plan.gps||document.visibilityState!=='visible')return;
