@@ -20,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check app JavaScript
-        run: node --check dist/app.js
+        run: |
+          node --check dist/app.js
+          node --check dist/gps.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
