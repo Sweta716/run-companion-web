@@ -11,6 +11,12 @@
   let client, user = null, enabled = false, busy = false, queued = false;
   const ownerKey = 'runcompanion.cloud.owner.v1';
   const consentKey = 'runcompanion.cloud.enabled.v1';
+  function deadline(promise, message) {
+    let timer;
+    return Promise.race([promise, new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), 15000);
+    })]).finally(() => clearTimeout(timer));
+  }
   function accountUI() {
     el('cloudLogin').hidden = !!user;
     el('cloudAccount').hidden = !user;
@@ -53,12 +59,13 @@
   try {
     const url = new URL(config.url);
     if (url.protocol !== 'https:' || !url.hostname.endsWith('.supabase.co') || config.publishableKey.startsWith('sb_secret_')) throw new Error('Use the HTTPS Supabase Project URL and public publishable key.');
-    await new Promise((resolve, reject) => {
+    status('Loading cloud sign-in…');
+    await deadline(new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.js';
+      script.src = 'vendor/supabase-2.57.4.js';
       script.onload = resolve; script.onerror = () => reject(new Error('Cloud sign-in could not load. Check your connection and reload.'));
       document.head.append(script);
-    });
+    }), 'Cloud sign-in took too long to load. Reload the page to retry.');
     client = window.supabase.createClient(config.url, config.publishableKey);
     const applySession = session => {
       user = session?.user || null;
@@ -69,7 +76,8 @@
       // Run outside the auth callback so SDK auth locks can be released first.
       if (enabled) setTimeout(() => { void sync(); }, 0);
     };
-    const {data, error} = await client.auth.getSession();
+    status('Checking your sign-in…');
+    const {data, error} = await deadline(client.auth.getSession(), 'Sign-in did not respond. Reload the page to retry.');
     if (error) throw error;
     applySession(data.session);
     client.auth.onAuthStateChange((event, session) => { if (['SIGNED_IN','SIGNED_OUT','INITIAL_SESSION'].includes(event)) applySession(session); });
