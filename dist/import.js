@@ -1,6 +1,6 @@
 'use strict';
 function parseActivityFile(text,filename){
-  if(text.length>5*1024*1024)throw new Error('File is too large (maximum 5 MB).');
+  if(text.length>50*1024*1024)throw new Error('File is too large (maximum 50 MB).');
   if(/<!DOCTYPE|<!ENTITY/i.test(text))throw new Error('Unsupported XML declarations.');
   const doc=new DOMParser().parseFromString(text,'application/xml');
   if(doc.getElementsByTagName('parsererror').length)throw new Error('The file contains invalid XML.');

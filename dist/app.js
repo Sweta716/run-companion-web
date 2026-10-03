@@ -123,7 +123,7 @@ $('importButton').onclick=async ()=>{
   $('importButton').disabled=true;$('importStatus').textContent='Reading selected files…';
   let added=0;const messages=[];
   for(const file of files){try{
-    if(file.size>5*1024*1024)throw new Error('Maximum file size is 5 MB.');
+    if(file.size>50*1024*1024)throw new Error('This file is larger than 50 MB. Choose an individual activity export.');
     const record=parseActivityFile(await file.text(),file.name);
     if(imported.some(r=>r.name===record.name&&r.date===record.date&&Math.abs(r.meters-record.meters)<1&&Math.abs(r.seconds-record.seconds)<1)){messages.push(`${file.name}: already imported.`);continue;}
     imported.unshift(record);imported=imported.slice(0,100);added++;
