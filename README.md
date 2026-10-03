@@ -24,4 +24,10 @@ Recent pace uses approximately 30 seconds of accepted readings and requires at l
 
 ## GitHub Pages
 
+## Activity import v0.4
+
+History accepts up to ten GPX or TCX files per batch, maximum 5 MB each, and retains up to 100 summaries. TCX imports one running Activity and sums lap distance/time; GPX imports one recorded track with timestamps and measures segments independently. Imported pace is elapsed pace and may include stops. Heart rate is the arithmetic mean of available valid samples, not a time-weighted average. No training recommendations are inferred yet. Duplicate name/date/distance/time summaries are skipped.
+
+Files are parsed locally; only name, source format, date, distance, duration and available heart-rate summary are saved. Coordinates, routes and raw files are discarded. FIT files and automatic Strava login are not implemented. Browser parser checks passed for TCX distance/time/HR, GPX distance/time, malformed XML rejection and rejection of untimed routes.
+
 Enable Pages in repository Settings > Pages with source GitHub Actions. The Publish browser app workflow publishes `dist` on main-branch pushes and can be started manually. No Apple developer membership or signing keys are needed. Open the resulting URL in Safari on the iPhone, then use Share > Add to Home Screen if desired. No service worker is installed; this version requires connectivity when opening the page.

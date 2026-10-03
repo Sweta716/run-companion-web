@@ -7,12 +7,14 @@ let prefs = { distance: 3, minutes: 11, seconds: 0, voice: true }, history = [],
 let cue = 'Start comfortable. There’s no need to win the first mile.';
 let gps = null, gpsWatch = null, paceDeviation = null, lastPaceCue = 0, gpsGeneration = 0;
 let latestFinished = history[0] || null;
+let imported = [];
 function walking(){return (run?.plan||prefs).mode==='walk';}
 function validPlan(p) { return p && Number.isFinite(p.distance) && p.distance >= .5 && p.distance <= 30 && Number.isInteger(p.minutes) && p.minutes >= 4 && p.minutes <= 25 && Number.isInteger(p.seconds) && p.seconds >= 0 && p.seconds <= 59 && typeof p.voice === 'boolean'; }
 function validRun(r) { return r && typeof r.id === 'string' && validPlan(r.plan) && Number.isFinite(r.elapsed) && r.elapsed >= 0 && Array.isArray(r.splits) && r.splits.every(s=>Number.isFinite(s)&&s>=60000) && Number.isFinite(r.lastCheck); }
 try {
   const data = JSON.parse(localStorage.getItem(KEY) || 'null');
   if(data) {
+    if(Array.isArray(data.imported))imported=data.imported.filter(r=>r&&typeof r.name==='string'&&Number.isFinite(r.meters)&&r.meters>0&&Number.isFinite(r.seconds)&&r.seconds>0).slice(0,100);
     if(validPlan(data.prefs)) prefs = data.prefs;
     if(Array.isArray(data.history)) history = data.history.filter(r=>validRun(r)&&Number.isFinite(r.finishedAt)).slice(0,100);
     if(validRun(data.run)) { run = data.run; run.active = false; run.since = null; cue = 'Your unfinished run is paused. Resume when you’re ready.'; }
@@ -20,7 +22,7 @@ try {
 } catch { $('storageWarning').textContent = 'Saved data could not be read. You can still run, but history may be unavailable.'; }
 function elapsed() { return run ? run.elapsed + (run.active ? Math.max(0,Date.now()-run.since) : 0) : 0; }
 function persist() {
-  try { const snapshot = run ? {...run,elapsed:elapsed(),since:run.active?Date.now():null} : null; localStorage.setItem(KEY,JSON.stringify({prefs,history,run:snapshot})); }
+  try { const snapshot = run ? {...run,elapsed:elapsed(),since:run.active?Date.now():null} : null; localStorage.setItem(KEY,JSON.stringify({prefs,history,imported,run:snapshot})); }
   catch { $('storageWarning').textContent = 'This browser cannot save your data. Keep the page open; history may be lost.'; }
 }
 function say(text, speak = true) {
@@ -106,11 +108,27 @@ function showHistory(show) {
   $('runView').hidden=show;$('historyView').hidden=!show;$('runTab').classList.toggle('selected',!show);$('historyTab').classList.toggle('selected',show);
   $('runTab').setAttribute('aria-selected',String(!show));$('historyTab').setAttribute('aria-selected',String(show));
   if(!show)return;
+  renderImported();
   $('historyList').replaceChildren();
   if(!history.length){const empty=document.createElement('div');empty.className='panel empty';const title=document.createElement('h2');title.textContent='Your first run starts here.';const text=document.createElement('p');text.textContent='Finish a run and it will appear in your journal.';empty.append(title,text);$('historyList').append(empty);}
   history.forEach(r=>{const card=document.createElement('article');card.className='panel history-card';const title=document.createElement('h2');title.textContent=new Date(r.finishedAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});card.append(title);const metrics=document.createElement('div');metrics.className='history-metrics';const avg=r.splits.length?formatTime(r.splits.reduce((a,b)=>a+b,0)/r.splits.length):'—';
     [['Elapsed',formatTime(r.elapsed)],[r.plan.gps?'GPS miles':'Miles marked',r.plan.gps?((r.meters||0)/RunGPSKit.MILE).toFixed(2):String(r.splits.length)],['Split avg / mile',avg]].forEach(([label,value])=>{const item=document.createElement('div'),l=document.createElement('span'),v=document.createElement('strong');l.textContent=label;v.textContent=value;item.append(l,v);metrics.append(item);});card.append(metrics);const copy=document.createElement('button');copy.className='secondary';copy.textContent='Copy test summary';copy.onclick=()=>copyReport(r,card);card.append(copy);if(r.gpsGaps){const note=document.createElement('p');note.className='error';note.textContent='GPS gaps: some distance was not measured.';card.append(note);}$('historyList').append(card);});
 }
+function renderImported(){
+  $('importedList').replaceChildren();
+  imported.forEach(r=>{const card=document.createElement('article');card.className='history-card';const title=document.createElement('h3');title.textContent=r.name;const stats=document.createElement('p');stats.textContent=`${(r.meters/RunGPSKit.MILE).toFixed(2)} miles · ${formatTime(r.seconds*1000)} elapsed · ${formatTime(r.seconds/r.meters*RunGPSKit.MILE*1000)} / mile${r.averageHeartRate?` · ${r.averageHeartRate} bpm sample average`:''}`;const note=document.createElement('p');note.className='hint';note.textContent=`${r.source} · ${r.date?new Date(r.date).toLocaleDateString():'Date unavailable'} · Elapsed pace can include stops.`;card.append(title,stats,note);$('importedList').append(card);});
+}
+$('importFiles').addEventListener('change',async event=>{
+  const files=Array.from(event.target.files||[]);if(files.length>10){$('importStatus').textContent='Choose up to 10 files at a time.';return;}
+  let added=0;const messages=[];
+  for(const file of files){try{
+    if(file.size>5*1024*1024)throw new Error('Maximum file size is 5 MB.');
+    const record=parseActivityFile(await file.text(),file.name);
+    if(imported.some(r=>r.name===record.name&&r.date===record.date&&Math.abs(r.meters-record.meters)<1&&Math.abs(r.seconds-record.seconds)<1)){messages.push(`${file.name}: already imported.`);continue;}
+    imported.unshift(record);imported=imported.slice(0,100);added++;
+  }catch(error){messages.push(`${file.name}: ${error.message}`);}}
+  persist();renderImported();$('importStatus').textContent=`${added} activities imported. ${messages.join(' ')}`;event.target.value='';
+});
 function stopGPS(){gpsGeneration++;if(gpsWatch!==null&&navigator.geolocation)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;paceDeviation=null;}
 function startGPS(){
   stopGPS();if(!run?.active||!run.plan.gps||document.visibilityState!=='visible')return;
